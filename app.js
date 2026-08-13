@@ -1168,12 +1168,23 @@
     try {
       var cuerpo = JSON.stringify({ pagina_id: paginaId });
       var url = API + '/api/micita/solicitud';
+
+      /* EL TIPO TIENE QUE SER text/plain, NO application/json.
+         sendBeacon manda siempre con las credenciales incluidas, y un blob de
+         application/json convierte la petición en "no simple": el navegador
+         pide un preflight que exige Access-Control-Allow-Credentials: true.
+         Ponerlo abriría el envío de cookies entre subdominios, que es
+         justamente lo que esta API evita usando Bearer. Con text/plain la
+         petición es simple, no hay preflight y llega. El servidor lee el
+         cuerpo con request.text(), así que el tipo le da igual. */
+      var tipo = { type: 'text/plain;charset=UTF-8' };
+
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(url, new Blob([cuerpo], { type: 'application/json' }));
+        navigator.sendBeacon(url, new Blob([cuerpo], tipo));
       } else {
         fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
           body: cuerpo,
           keepalive: true,
         }).catch(function () {});
