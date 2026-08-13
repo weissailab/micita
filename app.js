@@ -14,6 +14,22 @@
      De aquí sale el link que se comparte y el que codifica el QR. */
   var BASE = location.origin + location.pathname.replace(/index\.html$/, '');
 
+  /**
+   * Corrige BASE cuando la app se sirvió por una dirección fija.
+   *
+   * En micita.weissailab.com/subarberia el 404.html carga la aplicación desde
+   * una ruta que NO es su raíz, así que `location.pathname` trae el nombre del
+   * negocio. Sin quitarlo, el crédito "haz la tuya gratis" de esa página
+   * llevaría de vuelta a la página del mismo negocio en vez de a MiCita — que
+   * es justo el enlace del que depende que el producto se propague.
+   */
+  function fijarBase(slug) {
+    /* El slug ya viene validado contra [a-z0-9-] por el ruteador, así que no
+       hay nada que escapar: no puede traer metacaracteres de expresión regular. */
+    var re = new RegExp('/' + slug + '/?$');
+    BASE = location.origin + location.pathname.replace(/index\.html$/, '').replace(re, '/');
+  }
+
 
   /* ---------------- cuenta (modo 2: con Google) ----------------
      MiCita funciona de dos maneras y las dos son de verdad:
@@ -403,7 +419,10 @@
        archivo, y ese archivo carga esta misma aplicacion. Asi el nombre corto es
        una URL limpia sin servidor propio y sin un archivo por negocio. */
     var ruta = location.pathname.replace(/^\/+|\/+$/g, '');
-    if (ruta && /^[a-z0-9][a-z0-9-]{1,29}$/.test(ruta) && !h) return vistaPorNombre(ruta);
+    if (ruta && /^[a-z0-9][a-z0-9-]{1,29}$/.test(ruta) && !h) {
+      fijarBase(ruta);
+      return vistaPorNombre(ruta);
+    }
 
     var mn = h.match(/^\/n\/(.+)$/);
     if (mn) {
