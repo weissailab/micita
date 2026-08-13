@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MiCita — que te pidan cita sin llamarte, gratis</title>
+<meta name="description" content="Arma la página de citas de tu negocio en 3 minutos. Tus clientes escogen servicio, día y hora, y a ti te llega la cita por WhatsApp ya escrita. Con QR para pegar en el mostrador. Gratis, sin registro.">
+<meta name="theme-color" content="#4F46E5">
+<!-- La agenda va en el fragmento (#), que nunca llega al servidor: la vista
+     previa al compartir es siempre la misma. La escribimos para el caso real,
+     que es un cliente recibiendo el link o escaneando el QR del mostrador. -->
+<meta property="og:title" content="Pide tu cita aquí 📅">
+<meta property="og:description" content="Escoge servicio, día y hora. Te toma 20 segundos y no tienes que llamar.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://micita.weissailab.com/">
+<meta property="og:image" content="https://micita.weissailab.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
+<!-- Pages sirve con max-age=600: la versión evita que alguien que ya entró
+     siga corriendo el código viejo. Súbela al cambiar app.js o app.css. -->
+<link rel="stylesheet" href="app.css?v=1">
+</head>
+<body>
+<div id="app"></div>
+<script src="vendor/lz-string.min.js"></script>
+<script src="vendor/qrcode.js"></script>
+<script src="app.js?v=1"></script>
+</body>
+</html>
