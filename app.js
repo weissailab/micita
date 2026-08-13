@@ -6,11 +6,100 @@
 
   var NEQUI = '3171715071';
   var SOPORTE_WA = '573171715071';
+  var WEB = 'https://weissailab.com';
+  var API = 'https://panel.weissailab.com';
   var APP = document.getElementById('app');
 
   /* La dirección de esta copia de la app, sin el archivo ni el fragmento.
      De aquí sale el link que se comparte y el que codifica el QR. */
   var BASE = location.origin + location.pathname.replace(/index\.html$/, '');
+
+
+  /* ---------------- cuenta (modo 2: con Google) ----------------
+     MiCita funciona de dos maneras y las dos son de verdad:
+
+     ANONIMO   — la pagina viaja dentro del link. Cero registro, cero datos en
+                 ningun servidor. No se degrada nunca.
+     CON CUENTA — la pagina vive en el servidor y el negocio escoge su direccion
+                 fija micita.weissailab.com/subarberia. Cambia precios y
+                 horarios, y EL QR IMPRESO SIGUE SIRVIENDO. Que es justo lo que
+                 el modo anonimo no puede dar.
+
+     La identidad de la pagina va SEPARADA de la sesion, y esto no es un detalle:
+     en MiCarta se guardo el id dentro de la sesion y al crear una segunda carta
+     el QR apuntaba a la primera, con "Guardar cambios" a punto de escribirle
+     encima. Aqui `cuenta` dice QUIEN eres y `edicion` dice QUE pagina tienes
+     abierta; empezar de cero borra las dos. */
+
+  var cuenta = null;   // { token, email }
+  var edicion = null;  // { paginaId, nombreCorto }
+
+  function cuentaCargar() {
+    try { cuenta = JSON.parse(localStorage.getItem('micita:cuenta') || 'null'); } catch (e) { cuenta = null; }
+    try { edicion = JSON.parse(localStorage.getItem('micita:edicion') || 'null'); } catch (e) { edicion = null; }
+  }
+
+  function cuentaGuardar(c) {
+    cuenta = c;
+    try {
+      if (c) localStorage.setItem('micita:cuenta', JSON.stringify(c));
+      else localStorage.removeItem('micita:cuenta');
+    } catch (e) {}
+  }
+
+  function edicionGuardar(e) {
+    edicion = e;
+    try {
+      if (e) localStorage.setItem('micita:edicion', JSON.stringify(e));
+      else localStorage.removeItem('micita:edicion');
+    } catch (e2) {}
+  }
+
+  function hayCuenta() { return Boolean(cuenta && cuenta.token); }
+  function enServidor() { return Boolean(hayCuenta() && edicion && edicion.paginaId); }
+
+  /** La direccion fija, si esta pagina ya la reservo. */
+  function direccionFija() {
+    return edicion && edicion.nombreCorto ? BASE + edicion.nombreCorto : '';
+  }
+
+  function urlEntrar(volver) {
+    return API + '/micita/entrar?volver=' +
+      encodeURIComponent(location.origin + location.pathname + (volver || '#/listo'));
+  }
+
+  /* El token llega en el fragmento, que no viaja al servidor. Se guarda y se
+     borra de la barra de direcciones enseguida para que no quede en el historial
+     ni en un pantallazo. */
+  function recogerToken() {
+    var m = location.hash.match(/[#&]t=([^&]+)/);
+    if (!m) return;
+    var token = m[1];
+    var datos = {};
+    try {
+      datos = JSON.parse(atob(token.split('.')[0].replace(/-/g, '+').replace(/_/g, '/')));
+    } catch (e) {}
+    cuentaGuardar({ token: token, email: datos.email || (cuenta && cuenta.email) || '' });
+    var limpio = location.hash.replace(/[#&]t=[^&]*/, '');
+    if (limpio === '#' || limpio === '') limpio = '#/listo';
+    history.replaceState(null, '', location.pathname + limpio);
+  }
+
+  async function api(ruta, opciones) {
+    opciones = opciones || {};
+    var cab = { 'Content-Type': 'application/json' };
+    if (hayCuenta()) cab.Authorization = 'Bearer ' + cuenta.token;
+    var res = await fetch(API + ruta, {
+      method: opciones.metodo || 'GET',
+      headers: cab,
+      body: opciones.cuerpo ? JSON.stringify(opciones.cuerpo) : undefined,
+    });
+    var cuerpo = null;
+    try { cuerpo = await res.json(); } catch (e) {}
+    // 401 = el token caduco o lo revocaron: se olvida y se vuelve a modo anonimo.
+    if (res.status === 401 && cuenta) cuentaGuardar(null);
+    return { estado: res.status, datos: cuerpo };
+  }
 
   /* Un QR deja de ser escaneable de un celular más o menos a los 2.900
      caracteres. Aquí no hay fotos, así que el link nunca se acerca — pero el
@@ -304,7 +393,17 @@
 
   function pintar() {
     limpiar();
+    // Se relee en cada navegacion, no solo al arrancar: si el dueno entro en
+    // otra pestana, esta se entera sin tener que recargar.
+    cuentaCargar();
     var h = location.hash.replace(/^#/, '');
+
+    /* Direccion fija: micita.weissailab.com/subarberia
+       GitHub Pages sirve 404.html para cualquier ruta que no exista como
+       archivo, y ese archivo carga esta misma aplicacion. Asi el nombre corto es
+       una URL limpia sin servidor propio y sin un archivo por negocio. */
+    var ruta = location.pathname.replace(/^\/+|\/+$/g, '');
+    if (ruta && /^[a-z0-9][a-z0-9-]{1,29}$/.test(ruta) && !h) return vistaPorNombre(ruta);
 
     var mn = h.match(/^\/n\/(.+)$/);
     if (mn) {
@@ -323,6 +422,11 @@
     if (h === '/crear') return vistaEditor();
     if (h === '/listo') return vistaListo();
     if (h === '/ejemplo') return vistaNegocio(ejemplo());
+    if (h === '/mis-paginas') {
+      if (!hayCuenta()) { location.href = urlEntrar('#/mis-paginas'); return; }
+      return vistaMisPaginas();
+    }
+    if (h === '/lleno') return vistaLleno();
     return vistaLanding();
   }
 
@@ -353,6 +457,7 @@
           '<div class="btns">' +
             '<button class="btn" data-act="crear">' + (hay ? 'Seguir con la mía' : 'Crear mi página de citas') + '</button>' +
             '<a class="btn ghost" href="#/ejemplo">Ver un ejemplo</a>' +
+            (hayCuenta() ? '<a class="btn ghost" href="#/mis-paginas">Mis páginas</a>' : '') +
           '</div>' +
           '<p class="cs" style="margin-top:14px">Gratis · sin registro · sin instalar nada</p>' +
         '</div>' +
@@ -364,6 +469,7 @@
             '<li><span class="ic">📱</span><div><b>Con QR para el mostrador</b><span class="cs">Lo pegas en el espejo o en la vitrina. Quien pasa, escanea y pide su cita sin hablar con nadie.</span></div></li>' +
             '<li><span class="ic">⏰</span><div><b>Nada de citas a última hora</b><span class="cs">Le pones cuánta anticipación necesitas y hasta cuántos días adelante te pueden pedir.</span></div></li>' +
             '<li><span class="ic">💵</span><div><b>Abono para separar, si quieres</b><span class="cs">Muestras tu Nequi y el monto. El dinero te llega directo: MiCita no toca un peso.</span></div></li>' +
+            '<li><span class="ic">📌</span><div><b>Y una dirección que no se muere</b><span class="cs">Entrando con Google escoges algo como <code>' + esc(BASE.replace(/^https?:\/\//, '')) + 'tunegocio</code>. Cambias precios y horarios, y el QR que ya imprimiste sigue sirviendo. Gratis también.</span></div></li>' +
           '</ul>' +
         '</div>' +
 
@@ -384,7 +490,7 @@
           '<div class="btns"><button class="btn ghost chico" data-act="copiar-nequi">Copiar el número</button></div>' +
         '</div>' +
 
-        '<div class="pie">Hecho por <b>Weiss AI Lab</b> · <a target="_blank" rel="noopener" href="' + esc(waLink(SOPORTE_WA, 'Hola, quiero preguntar algo sobre MiCita')) + '">Escríbenos por WhatsApp</a></div>' +
+        pie() +
       '</div>';
 
     APP.onclick = function (ev) {
@@ -392,8 +498,14 @@
       if (!b) return;
       var a = b.getAttribute('data-act');
       if (a === 'crear') {
-        if (!(S.sv || []).length) S = conRubro(nueva(), 'barberia');
-        guardar();
+        if (!(S.sv || []).length) {
+          /* Empezar de cero borra el contenido Y la identidad. Si se olvidara la
+             identidad, "Guardar cambios" escribiria encima de la página anterior
+             y su QR terminaría apuntando al negocio equivocado. */
+          S = conRubro(nueva(), 'barberia');
+          edicionGuardar(null);
+          guardar();
+        }
         return ir('#/crear');
       }
       if (a === 'copiar-nequi') copiar(NEQUI, 'Número de Nequi copiado 🙏');
@@ -443,8 +555,9 @@
     APP.innerHTML =
       '<div class="barra">' +
         '<div class="marca"><span>📅</span> MiCita</div>' +
+        (hayCuenta() ? '<a class="btn ghost chico" href="#/mis-paginas">Mis páginas</a>' : '') +
         '<button class="btn ghost chico" data-act="inicio">Salir</button>' +
-        '<button class="btn chico" data-act="listo">Ya está lista →</button>' +
+        '<button class="btn chico" data-act="listo">' + (enServidor() ? 'Guardar →' : 'Ya está lista →') + '</button>' +
       '</div>' +
       '<div class="wrap ancho"><div class="col2">' +
         '<div class="principal">' +
@@ -692,12 +805,16 @@
     document.title = 'Tu página de citas está lista — MiCita';
     APP.className = '';
 
-    var link = linkNegocio(S);
+    /* El link que se comparte y el que codifica el QR es el CORTO en cuanto
+       exista: es el único que sobrevive a que el dueño cambie un precio. */
+    var fija = direccionFija();
+    var link = fija || linkNegocio(S);
     var edic = linkEdicion(S);
 
     APP.innerHTML =
       '<div class="barra">' +
         '<div class="marca"><span>📅</span> MiCita</div>' +
+        (hayCuenta() ? '<a class="btn ghost chico" href="#/mis-paginas">Mis páginas</a>' : '') +
         '<button class="btn ghost chico" data-act="volver">← Seguir editando</button>' +
       '</div>' +
       '<div class="wrap">' +
@@ -706,8 +823,10 @@
           '<p class="cs">Ponla donde tus clientes la vean: la bio de Instagram, tu estado de WhatsApp y el mostrador.</p>' +
         '</div>' +
 
+        bloqueDireccion(fija) +
+
         '<div class="card">' +
-          '<h3>1. Tu link</h3>' +
+          '<h3>Tu link</h3>' +
           '<div class="linkbox" style="margin-bottom:12px">' + esc(link) + '</div>' +
           '<div class="btns">' +
             '<button class="btn" data-act="compartir">Compartir</button>' +
@@ -717,7 +836,7 @@
         '</div>' +
 
         '<div class="card qr-caja">' +
-          '<h3>2. Tu código QR</h3>' +
+          '<h3>Tu código QR</h3>' +
           '<p class="cs">Imprímelo y pégalo en el espejo, la vitrina o el mostrador.</p>' +
           '<div id="qr"></div>' +
           '<div class="btns" style="justify-content:center">' +
@@ -725,15 +844,15 @@
           '</div>' +
         '</div>' +
 
+        (fija ? '' :
         '<div class="card">' +
-          '<h3>3. Guarda esto para después</h3>' +
-          '<p class="cs">Como no hay cuentas ni contraseñas, <b>este es el único modo de volver a editar tu página</b> cuando cambies un precio o un horario. Mándatelo a ti mismo por WhatsApp ahora y no lo pierdas.</p>' +
+          '<h3>Guarda esto para después</h3>' +
+          '<p class="cs">Sin dirección fija no hay cuenta ni contraseña, así que <b>este es el único modo de volver a editar tu página</b>. Mándatelo a ti mismo por WhatsApp ahora y no lo pierdas.</p>' +
           '<div class="btns">' +
             '<a class="btn wa" target="_blank" rel="noopener" href="' + esc(waLink(SOPORTE_WA, 'Guardo aquí mi link de edición de MiCita (no lo pierdas): ' + edic)) + '">Mandármelo por WhatsApp</a>' +
             '<button class="btn ghost" data-act="copiar-edicion">Copiar el link de edición</button>' +
           '</div>' +
-          '<div class="aviso amb" style="margin-top:12px">Si cambias algo, <b>el link cambia</b> y el QR viejo deja de servir. Por eso conviene el link corto de abajo antes de mandar a imprimir.</div>' +
-        '</div>' +
+        '</div>') +
 
         '<div class="card nequi">' +
           '<h3>¿Te sirvió? 🙏</h3>' +
@@ -746,18 +865,15 @@
         '</div>' +
 
         '<div class="card">' +
-          '<h3>¿La quieres con link corto y sin mi marca?</h3>' +
-          '<p class="cs">Por <b>$20.000</b> te dejo la página en una dirección propia del tipo <code>…/barberiaelrey</code>, sin el crédito de MiCita abajo. Lo mejor: <b>el QR impreso te sigue sirviendo aunque cambies precios y horarios</b>. Te la dejo lista el mismo día.</p>' +
-          '<a class="btn plano" target="_blank" rel="noopener" href="' + esc(waLink(SOPORTE_WA, 'Hola, quiero la versión con link corto de mi página de MiCita. Esta es: ' + link)) + '">Pedirla por WhatsApp</a>' +
+          '<h3>¿Prefieres que te la deje lista?</h3>' +
+          '<p class="cs">Por <b>$20.000</b> te la armo yo: tus servicios con las duraciones reales, tus horarios y el aviso del QR listo para imprimir y pegar. Te la entrego el mismo día.</p>' +
+          '<a class="btn plano" target="_blank" rel="noopener" href="' + esc(waLink(SOPORTE_WA, 'Hola, quiero que me dejes lista mi página de MiCita. Esta es la mía: ' + link)) + '">Pedirlo por WhatsApp</a>' +
         '</div>' +
 
-        '<div class="pie">Hecho por <b>Weiss AI Lab</b></div>' +
+        pie() +
       '</div>';
 
-    var caja = $('#qr');
-    var cv = qrCanvas(link, 260);
-    if (cv) caja.appendChild(cv);
-    else caja.innerHTML = '<p class="cs">El link quedó muy largo para un QR. Quita algunos servicios.</p>';
+    dibujarQR(link);
 
     APP.onclick = function (ev) {
       var b = ev.target.closest('[data-act]');
@@ -767,6 +883,9 @@
       if (a === 'copiar-link') return copiar(link, 'Link copiado ✨');
       if (a === 'copiar-edicion') return copiar(edic, 'Link de edición copiado 🔐');
       if (a === 'copiar-nequi') return copiar(NEQUI, 'Número de Nequi copiado 🙏');
+      if (a === 'entrar') { location.href = urlEntrar('#/listo'); return; }
+      if (a === 'reservar') return reservarDireccion(b);
+      if (a === 'guardar-cambios') return guardarCambios(b);
       if (a === 'bajar-qr') {
         var c = $('#qr canvas');
         if (c) bajarCanvas(c, 'qr-citas.png');
@@ -778,6 +897,299 @@
         else copiar(texto, 'Mensaje copiado, ya puedes pegarlo ✨');
       }
     };
+  }
+
+  /**
+   * El bloque que convierte un QR desechable en uno que dura.
+   *
+   * Es la diferencia real entre los dos modos, así que se explica por la
+   * consecuencia y no por la funcionalidad: sin dirección fija, cambiar un
+   * precio mata todo lo que ya mandaste a imprimir.
+   */
+  function bloqueDireccion(fija) {
+    var dominio = BASE.replace(/^https?:\/\//, '');
+
+    if (fija) {
+      return '<div class="card" style="border-color:#C7F0DD;background:linear-gradient(160deg,#ECFAF3,#fff)">' +
+        '<h3>Tu dirección fija ✅</h3>' +
+        '<div class="linkbox" style="margin-bottom:10px">' + esc(fija) + '</div>' +
+        '<p class="cs">Esta dirección es tuya para siempre. Cambia precios y horarios las veces que quieras: <b>el QR que imprimiste sigue sirviendo</b>.</p>' +
+        '<div class="btns"><button class="btn" data-act="guardar-cambios">Guardar cambios</button></div>' +
+      '</div>';
+    }
+
+    if (!hayCuenta()) {
+      return '<div class="card" style="border-color:#DDDAFB;background:linear-gradient(160deg,#F2F1FE,#fff)">' +
+        '<h3>Que tu QR no se muera 📌</h3>' +
+        '<p class="cs">Tal como está, <b>si cambias un precio o un horario el link cambia</b> y el código que imprimiste deja de servir.</p>' +
+        '<p class="cs">Con una dirección fija del tipo <code>' + esc(dominio) + 'tunegocio</code> eso no pasa: editas cuando quieras y el QR pegado en el espejo sigue funcionando. Es gratis, solo entras con Google.</p>' +
+        '<div class="btns"><button class="btn" data-act="entrar">Entrar con Google</button></div>' +
+      '</div>';
+    }
+
+    return '<div class="card" style="border-color:#DDDAFB;background:linear-gradient(160deg,#F2F1FE,#fff)">' +
+      '<h3>Escoge tu dirección fija 📌</h3>' +
+      '<p class="cs">Con esto el QR impreso te sirve para siempre. <b>Se escoge una sola vez y no se puede cambiar</b>, porque queda pegado en tu mostrador.</p>' +
+      '<div class="campo"><label for="corto">' + esc(dominio) + '</label>' +
+        '<input id="corto" type="text" placeholder="subarberia" autocapitalize="off" autocorrect="off" spellcheck="false" value="' + esc(sugerirNombre(S.n)) + '"></div>' +
+      '<div class="btns"><button class="btn" data-act="reservar">Reservar esta dirección</button></div>' +
+    '</div>';
+  }
+
+  /** De "Barbería El Rey" sale "barberiaelrey". */
+  function sugerirNombre(nombre) {
+    return String(nombre || '')
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .slice(0, 30);
+  }
+
+  function dibujarQR(link) {
+    var caja = $('#qr');
+    if (!caja) return;
+    var cv = qrCanvas(link, 260);
+    if (cv) caja.appendChild(cv);
+    else caja.innerHTML = '<p class="cs">El link quedó muy largo para un QR. Quita algunos servicios.</p>';
+  }
+
+  function ocupado(boton, texto) {
+    if (!boton) return;
+    boton.setAttribute('data-antes', boton.textContent);
+    boton.textContent = texto;
+    boton.disabled = true;
+  }
+
+  function libre(boton) {
+    if (!boton) return;
+    var antes = boton.getAttribute('data-antes');
+    if (antes) boton.textContent = antes;
+    boton.disabled = false;
+  }
+
+  /* ---------------------------------------------------------------
+     MODO CUENTA: guardar en el servidor
+     --------------------------------------------------------------- */
+
+  async function reservarDireccion(boton) {
+    var campo = $('#corto');
+    var n = (campo ? campo.value : '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,29}$/.test(n)) {
+      return toast('Solo letras, números y guiones. Entre 2 y 30 caracteres.');
+    }
+
+    ocupado(boton, 'Reservando…');
+    /* Si esta página ya existe en el servidor pero todavía no tiene dirección,
+       hay que ponérsela A ELLA: sin el pagina_id se crearía una duplicada. */
+    var r = await api('/api/micita/pagina', {
+      metodo: 'POST',
+      cuerpo: {
+        pagina_id: enServidor() ? edicion.paginaId : undefined,
+        datos: S,
+        nombre_corto: n,
+      },
+    });
+    libre(boton);
+
+    if (r.estado === 401) { toast('Se cerró tu sesión, entra otra vez'); return vistaListo(); }
+    if (r.estado === 409 && r.datos && r.datos.error === 'demasiadas_paginas') return toast(r.datos.mensaje);
+    if (r.estado === 409) return toast('Esa dirección ya la tiene otro negocio. Prueba con otra.');
+    if (r.estado === 429) return toast('Vas muy rápido. Espera un momento.');
+    if (r.estado === 400) return toast((r.datos && r.datos.mensaje) || 'Esa dirección está reservada. Escoge otra.');
+    if (r.estado !== 200 && r.estado !== 201) return toast('No se pudo guardar. Revisa tu conexión.');
+
+    var pg = r.datos.pagina;
+    edicionGuardar({ paginaId: pg.pagina_id, nombreCorto: pg.nombre_corto });
+    toast('Listo: tu dirección quedó fija 🎉');
+    vistaListo();
+  }
+
+  async function guardarCambios(boton) {
+    if (!enServidor()) return toast('Primero escoge tu dirección fija');
+    ocupado(boton, 'Guardando…');
+    var r = await api('/api/micita/pagina', {
+      metodo: 'POST',
+      cuerpo: { pagina_id: edicion.paginaId, datos: S },
+    });
+    libre(boton);
+    if (r.estado === 401) { toast('Se cerró tu sesión, entra otra vez'); return vistaListo(); }
+    if (r.estado !== 200 && r.estado !== 201) return toast('No se pudo guardar. Revisa tu conexión.');
+    toast('Guardado. Tus clientes ya ven los cambios ✅');
+  }
+
+  /* ---------------------------------------------------------------
+     MIS PÁGINAS (modo cuenta)
+     --------------------------------------------------------------- */
+
+  async function vistaMisPaginas() {
+    document.title = 'Mis páginas — MiCita';
+    APP.className = '';
+    APP.innerHTML = '<div class="wrap"><p class="cs">Cargando tus páginas…</p></div>';
+
+    var r = await api('/api/micita/pagina');
+    if (r.estado === 401) { location.href = urlEntrar('#/mis-paginas'); return; }
+    if (r.estado !== 200) {
+      APP.innerHTML = '<div class="wrap"><div class="card"><h2>No se pudieron cargar</h2>' +
+        '<p class="cs">Puede ser tu conexión. Vuelve a intentarlo en un momento.</p>' +
+        '<button class="btn" onclick="location.reload()">Reintentar</button></div></div>';
+      return;
+    }
+
+    var paginas = r.datos.paginas || [];
+    APP.innerHTML =
+      '<div class="barra">' +
+        '<div class="marca"><span>📅</span> MiCita</div>' +
+        '<a class="btn ghost chico" href="#/crear">Editor</a>' +
+        '<a class="btn chico" target="_blank" rel="noopener" href="' + esc(API) + '/micita">Ver mis números</a>' +
+      '</div>' +
+      '<div class="wrap">' +
+        '<h1>Mis páginas</h1>' +
+        '<p class="cs">' + esc(r.datos.email || '') + '</p>' +
+        (paginas.length ? '' : '<div class="card"><p>Todavía no has guardado ninguna página en tu cuenta.</p>' +
+          '<a class="btn" href="#/crear">Crear una</a></div>') +
+        paginas.map(function (p) {
+          var d = p.datos || {};
+          return '<div class="card">' +
+            '<h3>' + esc(p.negocio || d.n || 'Sin nombre') + '</h3>' +
+            (p.nombre_corto
+              ? '<div class="linkbox" style="margin-bottom:10px">' + esc(BASE + p.nombre_corto) + '</div>'
+              : '<p class="cs">Sin dirección fija todavía.</p>') +
+            '<div class="btns">' +
+              '<button class="btn ghost chico" data-abrir="' + esc(p.pagina_id) + '">Editar</button>' +
+              (p.nombre_corto ? '<a class="btn ghost chico" target="_blank" rel="noopener" href="' + esc(BASE + p.nombre_corto) + '">Ver</a>' : '') +
+              '<button class="btn ghost chico" data-baja="' + esc(p.pagina_id) + '">Dar de baja</button>' +
+            '</div>' +
+          '</div>';
+        }).join('') +
+        pie() +
+      '</div>';
+
+    APP.onclick = function (ev) {
+      var b = ev.target.closest('[data-abrir],[data-baja]');
+      if (!b) return;
+      if (b.hasAttribute('data-abrir')) {
+        var id = b.getAttribute('data-abrir');
+        var pg = paginas.filter(function (x) { return x.pagina_id === id; })[0];
+        if (!pg) return;
+        S = normalizar(pg.datos);
+        guardar();
+        edicionGuardar({ paginaId: pg.pagina_id, nombreCorto: pg.nombre_corto });
+        return ir('#/crear');
+      }
+      if (b.hasAttribute('data-baja')) return darDeBaja(b.getAttribute('data-baja'), b);
+    };
+  }
+
+  async function darDeBaja(id, boton) {
+    if (!confirm('¿Dar de baja esta página? El QR impreso dejará de funcionar y la dirección no se puede volver a usar.')) return;
+    ocupado(boton, 'Dando de baja…');
+    var r = await api('/api/micita/pagina', { metodo: 'DELETE', cuerpo: { pagina_id: id } });
+    libre(boton);
+    if (r.estado !== 200) return toast('No se pudo dar de baja.');
+    if (edicion && edicion.paginaId === id) edicionGuardar(null);
+    toast('Dada de baja.');
+    vistaMisPaginas();
+  }
+
+  function vistaLleno() {
+    document.title = 'Vuelve en un rato — MiCita';
+    APP.className = '';
+    APP.innerHTML = '<div class="wrap centro"><div class="card">' +
+      '<h2>Estamos recibiendo muchas cuentas nuevas 😅</h2>' +
+      '<p class="cs">Espera un rato y vuelve a intentar entrar con Google. Mientras tanto tu página sigue funcionando con su link, que no depende de nada.</p>' +
+      '<a class="btn" href="#/listo">Volver</a></div></div>';
+  }
+
+  /* ---------------------------------------------------------------
+     LA PÁGINA VIVA (dirección fija)
+
+     GitHub Pages sirve 404.html para cualquier ruta que no exista como archivo,
+     y ese archivo carga esta misma aplicación. Así micita.weissailab.com/barberia
+     funciona sin servidor propio, sin tocar el DNS y sin generar un archivo por
+     negocio: aquí se le pide la página viva a la API.
+     --------------------------------------------------------------- */
+
+  async function vistaPorNombre(slug) {
+    document.title = 'Abriendo…';
+    APP.className = '';
+    APP.innerHTML = '<div class="wrap centro"><p class="cs">Abriendo la página de citas…</p></div>';
+
+    var res;
+    try {
+      res = await fetch(API + '/api/micita/publica/' + encodeURIComponent(slug));
+    } catch (e) {
+      return errorPublico('No pudimos abrir la página', 'Puede ser tu conexión. Vuelve a intentarlo en un momento.', true);
+    }
+    if (res.status === 404) {
+      document.title = 'Aquí no hay ninguna página — MiCita';
+      return errorPublico('Aquí no hay ninguna página de citas',
+        'La dirección ' + location.host + '/' + slug + ' no le pertenece a ningún negocio. Puede estar mal escrita.', false);
+    }
+    if (!res.ok) {
+      return errorPublico('No pudimos abrir la página', 'Puede ser tu conexión. Vuelve a intentarlo en un momento.', true);
+    }
+
+    var cuerpo = await res.json();
+    var d = normalizar(cuerpo.datos);
+    document.title = (d.n || 'Pedir cita') + ' — Pide tu cita';
+    pintarNegocio(APP, d, { previa: false, paginaId: cuerpo.pagina_id });
+  }
+
+  /**
+   * Le suma uno al contador del negocio. NO manda quien pide, ni el telefono,
+   * ni el servicio: con saber que la pagina esta sirviendo basta, y lo que no
+   * se guarda no se puede filtrar. La cita de verdad va por el WhatsApp del
+   * negocio, que es donde el dueno ya la maneja.
+   *
+   * Con sendBeacon porque el navegador se va a WhatsApp en ese mismo instante y
+   * un fetch normal se cancelaria a mitad de camino. Si falla, no pasa nada:
+   * es un contador, no la cita.
+   */
+  function reportarSolicitud(paginaId) {
+    try {
+      var cuerpo = JSON.stringify({ pagina_id: paginaId });
+      var url = API + '/api/micita/solicitud';
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, new Blob([cuerpo], { type: 'application/json' }));
+      } else {
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: cuerpo,
+          keepalive: true,
+        }).catch(function () {});
+      }
+    } catch (e) { /* nunca romper la pagina por un contador */ }
+  }
+
+  function errorPublico(titulo, detalle, reintentar) {
+    APP.innerHTML = '<div class="wrap centro"><div class="card">' +
+      '<div style="font-size:44px">' + (reintentar ? '😕' : '🤔') + '</div>' +
+      '<h2>' + esc(titulo) + '</h2>' +
+      '<p class="cs">' + esc(detalle) + '</p>' +
+      (reintentar
+        ? '<button class="btn" onclick="location.reload()">Reintentar</button>'
+        : '<a class="btn" href="' + esc(BASE) + '">Hacer mi propia página</a>') +
+      '</div>' + pie() + '</div>';
+  }
+
+  /** Completa un objeto que viene del servidor con los campos que falten. */
+  function normalizar(datos) {
+    var base = nueva();
+    if (datos && typeof datos === 'object') {
+      for (var k in base) if (datos[k] !== undefined) base[k] = datos[k];
+    }
+    if (!Array.isArray(base.ho)) base.ho = [[], [], [], [], [], [], []];
+    while (base.ho.length < 7) base.ho.push([]);
+    return base;
+  }
+
+  /** El pie del laboratorio. Va en todas las pantallas propias. */
+  function pie() {
+    return '<div class="pie">Hecho en Colombia por ' +
+      '<a href="' + WEB + '/?desde=micita" target="_blank" rel="noopener"><b>Weiss AI Lab</b></a> · ' +
+      '<a target="_blank" rel="noopener" href="' + esc(waLink(SOPORTE_WA, 'Hola, vi MiCita y quiero un asistente de WhatsApp para mi negocio')) + '">' +
+      '¿quieres que tu WhatsApp conteste solo?</a></div>';
   }
 
   function qrCanvas(texto, px) {
@@ -853,7 +1265,8 @@
     }
 
     if (d.cr) {
-      partes.push('<div class="creditos-neg">Hecha con <a href="' + esc(BASE) + '" target="_blank" rel="noopener">MiCita 📅</a> · haz la tuya gratis</div>');
+      partes.push('<div class="creditos-neg">Hecha con <a href="' + esc(BASE) + '" target="_blank" rel="noopener">MiCita 📅</a> de ' +
+        '<a href="' + WEB + '/?desde=micita" target="_blank" rel="noopener">Weiss AI Lab</a> · haz la tuya gratis</div>');
     }
 
     partes.push('<div class="barra-fin">' +
@@ -988,6 +1401,7 @@
         '• Mi nombre: ' + sel.nombre.trim();
       if (+d.ab && d.nq) txt += '\n\nYa sé que debo abonar ' + pesos(d.ab) + ' a Nequi ' + d.nq + ' para separar.';
 
+      if (!opts.previa && opts.paginaId) reportarSolicitud(opts.paginaId);
       if (!opts.previa) window.open(waLink(d.w, txt), '_blank', 'noopener');
       pintarHecho(d, s, f, sel.hora, sel.nombre.trim(), opts);
     });
@@ -1022,7 +1436,8 @@
           '<button class="btn ghost ancho" data-act="otra">Pedir otra cita</button>' +
         '</div>' +
       '</div>' +
-      (d.cr ? '<div class="creditos-neg">Hecha con <a href="' + esc(BASE) + '" target="_blank" rel="noopener">MiCita 📅</a> · haz la tuya gratis</div>' : '');
+      (d.cr ? '<div class="creditos-neg">Hecha con <a href="' + esc(BASE) + '" target="_blank" rel="noopener">MiCita 📅</a> de ' +
+        '<a href="' + WEB + '/?desde=micita" target="_blank" rel="noopener">Weiss AI Lab</a> · haz la tuya gratis</div>' : '');
 
     var txt = '¡Hola! Quiero pedir una cita 📅\n' +
       '• Servicio: ' + s[0] + '\n• Día: ' + fechaLarga(fecha) + '\n• Hora: ' + hora12(hora) + '\n• Mi nombre: ' + quien;
@@ -1085,6 +1500,8 @@
 
   function arrancar() {
     cargar();
+    cuentaCargar();
+    recogerToken();
     window.addEventListener('hashchange', function () {
       APP.onclick = null;
       APP.oninput = null;

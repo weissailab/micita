@@ -45,20 +45,34 @@ nuestra.
 Esa frontera es justo lo que sí puede hacer el asistente de WhatsApp del
 laboratorio, que tiene Postgres detrás.
 
-## La decisión de diseño
+## Dos modos, los dos de verdad
 
-**La agenda viaja dentro del link.** Se comprime con LZ-string y va en el
-fragmento (`#/n/…`), que nunca llega al servidor. No hay backend, ni base de
-datos, ni cuentas, ni cookies. Operarlo cuesta cero para siempre y no guarda
-datos de nadie — ni del negocio, ni de quien pide la cita.
+**1. Anónimo.** La agenda viaja dentro del link: se comprime con LZ-string y va
+en el fragmento (`#/n/…`), que nunca llega al servidor. Sin registro y sin datos
+de nadie en ninguna parte. **No se degrada nunca.** Sus dos contrapartidas se
+avisan en la interfaz: quien pierde su link de edición pierde la página, y **si
+cambia un precio o un horario el link cambia y el QR impreso muere**.
 
-Dos contrapartidas, las dos avisadas en la interfaz:
+**2. Con Google.** La página vive en Postgres y el negocio escoge su dirección
+fija `micita.weissailab.com/subarberia`. Cambia precios y horarios **y el QR
+pegado en el espejo sigue sirviendo** — que es justo lo que el modo anónimo no
+puede dar, y por eso es el único argumento con el que se ofrece.
 
-1. **Quien pierde su link de edición pierde la página.** Por eso la pantalla
-   final insiste en mandárselo a uno mismo por WhatsApp.
-2. **Si cambia un precio o un horario, cambia el link, y el QR impreso muere.**
-   Por eso el link corto de pago se ofrece *antes* de mandar a imprimir: con
-   dirección propia el QR sobrevive a los cambios.
+En el modo con cuenta:
+
+- La API vive en el panel (`/api/micita/*`), con sesión propia aislada del
+  asistente y de MiCarta (cookie y tipo firmado propios).
+- `404.html` es el resolvedor: Pages lo sirve para cualquier ruta inexistente y
+  ahí se carga la misma app, que le pide la página viva a la API. Sin servidor
+  propio y sin un archivo por negocio.
+- **El nombre corto se escoge una sola vez y no se puede cambiar.** Lo impide la
+  aplicación y además un trigger en Postgres: está impreso en un espejo que no
+  podemos recoger.
+- Dar de baja **no borra la fila** (`publicada=false`). Si se borrara, la
+  dirección quedaría libre y otro negocio podría tomarla: alguien pidiendo cita
+  en la barbería terminaría escribiéndole a una veterinaria.
+- Los contadores son anónimos: cuántos abrieron y cuántos llegaron a mandar la
+  solicitud. **Ni quién ni qué pidió** — eso vive en el WhatsApp del negocio.
 
 ## Cómo está armado
 
@@ -73,7 +87,9 @@ og.png          tarjeta de vista previa, generada con herramientas/og.mjs
 ```
 
 - **Rutas:** `#/crear` (editor), `#/listo` (publicación con QR), `#/n/<datos>`
-  (página del negocio), `#/e/<datos>` (volver a editar), `#/ejemplo`.
+  (página del negocio en modo anónimo), `#/e/<datos>` (volver a editar),
+  `#/mis-paginas` (modo cuenta), `#/ejemplo`, y `/<nombre-corto>` como ruta real
+  resuelta por `404.html`.
 - **La agenda** vive en tres funciones de `app.js`: `franjas()` genera las horas
   de un día para un servicio, `diasConCupo()` arma la tira de días, y
   `horarioResumen()` agrupa los días seguidos con el mismo horario ("lun a vie
@@ -94,7 +110,12 @@ Trampas ya resueltas:
    manipulado con menos días dejaba `ho[dia]` en `undefined` al generar franjas;
    `decodificar()` lo rellena.
 3. **GitHub Pages sirve con `Cache-Control: max-age=600`.** `index.html` carga
-   `app.js?v=N`: **hay que subir ese número al tocar `app.js` o `app.css`**.
+   `app.js?v=N`: **hay que subir ese número al tocar `app.js` o `app.css`**, y
+   `404.html` carga los mismos archivos, así que hay que subirlo en los dos.
+4. **La identidad de la página va aparte de la sesión.** `micita:cuenta` dice
+   quién eres y `micita:edicion` qué página tienes abierta. Guardarlo junto fue
+   un bug real en MiCarta: se creaba una segunda carta y el QR apuntaba a la
+   primera, con "Guardar cambios" a punto de escribirle encima.
 
 ## Verificar el QR de verdad
 
@@ -123,10 +144,10 @@ Gratis y sin publicidad. Al pie de cada página va un crédito discreto ("Hecha
 con MiCita · haz la tuya gratis").
 
 - **Aporte voluntario** a Nequi 3171715071.
-- **Versión con link corto** ($20.000): dirección propia del tipo
-  `…/barberiaelrey`, sin el crédito abajo, y **el QR impreso sigue sirviendo
-  aunque cambien precios y horarios** — que es exactamente lo que el modo gratis
-  no puede dar. Se pide por WhatsApp y se arma a mano.
+- **"Te la dejo lista"** ($20.000): se la armamos nosotros — servicios con sus
+  duraciones reales, horarios y el aviso del QR listo para imprimir. Se pide por
+  WhatsApp. **La dirección fija NO se cobra**: es gratis entrando con Google, y
+  cobrarla sería vender algo que el producto ya regala.
 - **El puente al asistente:** un negocio con página de citas empieza a recibir
   preguntas de disponibilidad a toda hora. Ese es el momento en que el asistente
   de WhatsApp deja de verse caro.
