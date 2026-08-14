@@ -4,6 +4,10 @@
 (function () {
   'use strict';
 
+  /* El kit compartido de los productos libres. Lo carga core/core.js, que va
+     antes que este archivo en index.html. */
+  var W = window.Weiss;
+
   var NEQUI = '3171715071';
   var SOPORTE_WA = '573171715071';
   var WEB = 'https://weissailab.com';
@@ -12,7 +16,7 @@
 
   /* La dirección de esta copia de la app, sin el archivo ni el fragmento.
      De aquí sale el link que se comparte y el que codifica el QR. */
-  var BASE = location.origin + location.pathname.replace(/index\.html$/, '');
+  var BASE = W.raizDe();
 
   /**
    * Corrige BASE cuando la app se sirvió por una dirección fija.
@@ -22,12 +26,13 @@
    * negocio. Sin quitarlo, el crédito "haz la tuya gratis" de esa página
    * llevaría de vuelta a la página del mismo negocio en vez de a MiCita — que
    * es justo el enlace del que depende que el producto se propague.
+   *
+   * El cómo vive en el core porque este mismo fallo ya se comió a MiCarta y a
+   * MiCita por separado, con dos nombres distintos. El slug ya viene validado
+   * contra [a-z0-9-] por el ruteador.
    */
   function fijarBase(slug) {
-    /* El slug ya viene validado contra [a-z0-9-] por el ruteador, así que no
-       hay nada que escapar: no puede traer metacaracteres de expresión regular. */
-    var re = new RegExp('/' + slug + '/?$');
-    BASE = location.origin + location.pathname.replace(/index\.html$/, '').replace(re, '/');
+    BASE = W.raizDe(slug);
   }
 
 
@@ -154,63 +159,15 @@
 
   /* ---------------------------------------------------------------
      UTILIDADES
+     Lo que no sabe nada de citas vive en el core (core/core.js, copia de
+     Activos/weiss-core/web/core.js en el repo del Lab). Aquí solo se le
+     pone nombre corto para no tocar los sitios donde se usa.
      --------------------------------------------------------------- */
 
-  function esc(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  function $(sel, raiz) { return (raiz || document).querySelector(sel); }
-  function $$(sel, raiz) { return Array.prototype.slice.call((raiz || document).querySelectorAll(sel)); }
-
-  var toastT = null;
-  function toast(msg) {
-    var t = $('#toast');
-    if (!t) {
-      t = document.createElement('div');
-      t.id = 'toast';
-      t.className = 'toast';
-      document.body.appendChild(t);
-    }
-    t.textContent = msg;
-    t.classList.add('ver');
-    clearTimeout(toastT);
-    toastT = setTimeout(function () { t.classList.remove('ver'); }, 2400);
-  }
-
-  function copiar(txt, msg) {
-    function viejo() {
-      var ta = document.createElement('textarea');
-      ta.value = txt;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); } catch (e) {}
-      document.body.removeChild(ta);
-      toast(msg || 'Copiado');
-    }
-    if (navigator.clipboard && location.protocol !== 'file:') {
-      navigator.clipboard.writeText(txt).then(function () { toast(msg || 'Copiado'); }, viejo);
-    } else { viejo(); }
-  }
-
-  /* Normaliza a formato internacional colombiano: 3171715071 -> 573171715071 */
-  function waNum(n) {
-    var d = String(n || '').replace(/\D/g, '');
-    if (!d) return '';
-    if (d.length === 10 && d.charAt(0) === '3') return '57' + d;
-    if (d.length === 12 && d.slice(0, 2) === '57') return d;
-    return d;
-  }
-
-  function waLink(num, texto) {
-    return 'https://wa.me/' + waNum(num) + '?text=' + encodeURIComponent(texto);
-  }
-
-  function dosD(n) { return (n < 10 ? '0' : '') + n; }
+  var esc = W.esc, $ = W.$, $$ = W.$$;
+  var toast = W.toast, copiar = W.copiar;
+  var waNum = W.waNum, waLink = W.waLink;
+  var dosD = W.dosD, hash = W.hash;
 
   /* 'HH:MM' -> minutos desde medianoche, y al revés. Toda la aritmética de
      horarios se hace en minutos: sumar 45 a las 23:30 con cadenas es pedir un
@@ -286,22 +243,10 @@
   }
 
   var S = nueva();
-  var LS = 'micita:borrador';
+  var borrador = W.almacen('micita:borrador');
 
-  function guardar() {
-    try { localStorage.setItem(LS, JSON.stringify(S)); } catch (e) {}
-  }
-
-  function cargar() {
-    try {
-      var x = JSON.parse(localStorage.getItem(LS) || 'null');
-      if (x && typeof x === 'object') {
-        var base = nueva();
-        for (var k in base) if (x[k] !== undefined) base[k] = x[k];
-        S = base;
-      }
-    } catch (e) {}
-  }
+  function guardar() { borrador.guardar(S); }
+  function cargar() { S = borrador.cargar(nueva()); }
 
   function codificar(d) { return LZString.compressToEncodedURIComponent(JSON.stringify(d)); }
 
@@ -786,10 +731,7 @@
       (tipo === 'tel' || tipo === 'number' ? ' inputmode="numeric"' : '') + '></div>';
   }
 
-  function campoArea(k, etiqueta, ph) {
-    return '<div class="campo"><label for="c_' + k + '">' + etiqueta + '</label>' +
-      '<textarea id="c_' + k + '" data-k="' + k + '" placeholder="' + esc(ph) + '">' + esc(S[k]) + '</textarea></div>';
-  }
+  function campoArea(k, etiqueta, ph) { return W.campoArea(k, etiqueta, ph, S[k]); }
 
   var previaT = null;
   function previa() {
@@ -1516,12 +1458,6 @@
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); document.body.removeChild(a); }, 1200);
     toast('Guardada en tu calendario 📅');
-  }
-
-  function hash(s) {
-    var h = 0;
-    for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; }
-    return h;
   }
 
   /* ---------------------------------------------------------------

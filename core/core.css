@@ -1,0 +1,143 @@
+/* Weiss Core — el chasís de los productos libres.
+   MiCarta, MiCita, Invita y lo que venga después.
+
+   Estas 40 reglas eran byte-idénticas en MiCita y en Invita. Se sacaron de ahí
+   sin tocar una declaración, y por eso mover el archivo NO cambia cómo se ve
+   nada: se carga ANTES que app.css, así que cualquier regla del producto sigue
+   ganando por orden, igual que antes.
+
+   NO define colores. Consume estas variables, que cada producto define en su
+   :root y son las que le dan su cara propia:
+
+     --bg
+     --linea
+     --marca
+     --marca-osc
+     --papel
+     --r
+     --sans
+     --sombra
+     --suave
+     --tinta
+
+   Lo que se quedó afuera a propósito:
+   - :root, .btn, .chip, .barra, .hero h1, .nequi, .linkbox, .marco, h1, h2 —
+     mismo selector y distinto cuerpo en cada app. Son el tema, no el chasís.
+   - .col2 y .col2 .lado — son idénticas, pero viven dentro de un @media y
+     sacarlas exigiría mover el @media entero. No vale la pena todavía.
+
+   La copia a cada repo la hace Activos/weiss-core/sincronizar.mjs. No se edita
+   la copia: se edita este archivo. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--tinta);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  overflow-wrap: break-word;
+}
+
+img { max-width: 100%; display: block; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+a { color: var(--marca-osc); }
+
+.wrap { max-width: 720px; margin: 0 auto; padding: 20px 18px 64px; }
+
+h3 { font-size: 17px; }
+
+p { margin: 0 0 12px; }
+
+.cs { color: var(--suave); font-size: 14.5px; }
+
+.centro { text-align: center; }
+
+.btn.plano { background: var(--tinta); }
+
+.btn.wa { background: #1FA855; }
+
+.btn.ancho { width: 100%; }
+
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.card {
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: var(--r);
+  padding: 18px;
+  margin: 0 0 16px;
+  box-shadow: var(--sombra);
+}
+
+.campo { margin: 0 0 14px; }
+
+.campo label { display: block; font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+
+.campo .pista { display: block; font-weight: 400; color: var(--suave); font-size: 13px; margin-top: 2px; }
+
+.campo input, .campo textarea, .campo select {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 13px;
+  border: 1.5px solid var(--linea);
+  border-radius: 11px;
+  background: #fff;
+  outline: 0;
+}
+
+.campo input:focus, .campo textarea:focus, .campo select:focus { border-color: var(--marca); }
+
+.fila { display: flex; gap: 10px; }
+
+.fila > * { flex: 1; min-width: 0; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.aviso { border-radius: 12px; padding: 11px 13px; font-size: 14px; margin: 0 0 14px; }
+
+.hero { padding: 26px 0 6px; text-align: center; }
+
+.hero .kicker { font-size: 13px; letter-spacing: .14em; text-transform: uppercase; color: var(--marca); font-weight: 700; }
+
+.hero .btns { justify-content: center; }
+
+.puntos { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 12px; }
+
+.puntos li { display: flex; gap: 11px; align-items: flex-start; font-size: 15px; }
+
+.puntos .ic { font-size: 20px; line-height: 1.2; flex: 0 0 auto; }
+
+.puntos b { display: block; }
+
+.pasos { counter-reset: p; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+
+.pasos li { position: relative; padding-left: 38px; font-size: 15px; }
+
+.pie { text-align: center; color: var(--suave); font-size: 13px; padding: 26px 0 0; border-top: 1px solid var(--linea); margin-top: 26px; }
+
+.barra .marca { font-weight: 700; margin-right: auto; display: flex; align-items: center; gap: 7px; }
+
+.barra .marca span { font-size: 19px; }
+
+.quitar {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px;
+  border: 1.5px solid var(--linea); background: #fff; cursor: pointer; color: var(--suave);
+}
+
+.marco .pantalla { height: 620px; overflow-y: auto; overflow-x: hidden; background: #fff; position: relative; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(10px);
+  background: var(--tinta); color: #fff; padding: 12px 18px; border-radius: 999px;
+  font-size: 14.5px; z-index: 90; opacity: 0; pointer-events: none; transition: all .22s ease;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .2); max-width: 90vw; text-align: center;
+}
+
+.toast.ver { opacity: 1; transform: translateX(-50%) translateY(0); }

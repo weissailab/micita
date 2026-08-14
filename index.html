@@ -19,13 +19,18 @@
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📅</text></svg>">
 <!-- Pages sirve con max-age=600: la versión evita que alguien que ya entró
-     siga corriendo el código viejo. Súbela al cambiar app.js o app.css. -->
-<link rel="stylesheet" href="app.css?v=4">
+     siga corriendo el código viejo. La sube sola el sincronizador del core
+     (Activos/weiss-core/sincronizar.mjs en el repo del Lab); si tocas app.js
+     o app.css a mano, súbela tú. Todas suben al mismo número a la vez para
+     que nunca quede un core viejo con un app nuevo. -->
+<link rel="stylesheet" href="core/core.css?v=5">
+<link rel="stylesheet" href="app.css?v=5">
 </head>
 <body>
 <div id="app"></div>
 <script src="vendor/lz-string.min.js"></script>
 <script src="vendor/qrcode.js"></script>
-<script src="app.js?v=4"></script>
+<script src="core/core.js?v=5"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
